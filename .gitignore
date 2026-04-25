@@ -1,0 +1,44 @@
+# ── Design & planning (internal only) ─────────────────────────
+CLAUDE.md
+PROJECT_SPEC.md
+MEMORY.md
+PocketShelf.html
+*.zip
+
+# ── Xcode ──────────────────────────────────────────────────────
+build/
+DerivedData/
+*.xcuserdata/
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.xcworkspace/xcuserdata/
+*.xcworkspace/xcshareddata/swiftpm/
+.swiftpm/
+
+# ── macOS ──────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+*.icloud
+
+# ── Swift Package Manager ──────────────────────────────────────
+.build/
+Packages/
+Package.resolved
+
+# ── Misc ───────────────────────────────────────────────────────
+*.o
+*.d
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM

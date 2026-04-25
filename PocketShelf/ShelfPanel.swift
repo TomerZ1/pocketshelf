@@ -55,6 +55,31 @@ final class ShelfPanel: NSPanel {
         contentView?.layer?.setAffineTransform(.identity)
     }
 
+    // Spring bounce used when triggered by shake gesture — more energetic than the hotkey fade
+    func showWithSpring() {
+        sizeToFit()
+        let mouse = NSEvent.mouseLocation
+        let origin = NSPoint(x: mouse.x - frame.width / 2, y: mouse.y - frame.height - 12)
+        setFrameOrigin(clampedOrigin(origin))
+        alphaValue = 0
+        makeKeyAndOrderFront(nil)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.28
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            animator().alphaValue = 1
+        }
+        let spring = CASpringAnimation(keyPath: "transform")
+        spring.fromValue       = CATransform3DMakeScale(0.72, 0.72, 1)
+        spring.toValue         = CATransform3DIdentity
+        spring.damping         = 12
+        spring.stiffness       = 200
+        spring.initialVelocity = 8
+        spring.duration        = spring.settlingDuration
+        contentView?.wantsLayer = true
+        contentView?.layer?.add(spring, forKey: "springScale")
+        contentView?.layer?.setAffineTransform(.identity)
+    }
+
     func hide() {
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.15

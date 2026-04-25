@@ -15,11 +15,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var shelfPanel: ShelfPanel?
     private var hotkeyManager: HotkeyManager?
+    private var shakeDetector: ShakeDetector?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         shelfPanel = ShelfPanel()
         hotkeyManager = HotkeyManager { [weak self] in
             self?.toggleShelf()
+        }
+        shakeDetector = ShakeDetector()
+        shakeDetector?.onShake = { [weak self] in
+            guard let panel = self?.shelfPanel, !panel.isVisible else { return }
+            panel.showWithSpring()
         }
         setupMenuBarItem()
     }

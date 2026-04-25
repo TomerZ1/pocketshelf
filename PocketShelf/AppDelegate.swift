@@ -57,9 +57,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func toggleShelf() {
         guard let panel = shelfPanel else { return }
         if panel.isVisible {
-            panel.orderOut(nil)
+            panel.hide()
         } else {
-            panel.showNearCursor()
+            panel.show()
         }
     }
 

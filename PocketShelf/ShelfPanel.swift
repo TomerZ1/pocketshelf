@@ -26,12 +26,44 @@ final class ShelfPanel: NSPanel {
         }
     }
 
-    func showNearCursor() {
-        let mouse = NSEvent.mouseLocation
+    func show() {
         sizeToFit()
+        let mouse = NSEvent.mouseLocation
         let origin = NSPoint(x: mouse.x - frame.width / 2, y: mouse.y - frame.height - 8)
-        setFrameOrigin(clampedOrigin(origin))
+        if !isVisible {
+            setFrameOrigin(clampedOrigin(origin))
+        }
+        alphaValue = 0
         makeKeyAndOrderFront(nil)
+        // Fade + scale in: scale is applied to the content view's layer
+        contentView?.layer?.setAffineTransform(CGAffineTransform(scaleX: 0.94, y: 0.94))
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.2
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            animator().alphaValue = 1
+        }
+        // Animate scale back to 1 via Core Animation
+        let scale = CABasicAnimation(keyPath: "transform")
+        scale.fromValue = CATransform3DMakeScale(0.94, 0.94, 1)
+        scale.toValue = CATransform3DIdentity
+        scale.duration = 0.2
+        scale.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        scale.fillMode = .forwards
+        scale.isRemovedOnCompletion = true
+        contentView?.wantsLayer = true
+        contentView?.layer?.add(scale, forKey: "showScale")
+        contentView?.layer?.setAffineTransform(.identity)
+    }
+
+    func hide() {
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.15
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            animator().alphaValue = 0
+        }, completionHandler: {
+            self.orderOut(nil)
+            self.alphaValue = 1
+        })
     }
 
     func clearItems() {

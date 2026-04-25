@@ -2,14 +2,18 @@ import AppKit
 
 private let kColumns: CGFloat = 4
 private let kThumbSize: CGFloat = 52
-private let kRadius: CGFloat = 9
+private let kThumbRadius: CGFloat = 9
 private let kGap: CGFloat = 8
 private let kPadding: CGFloat = 12
 private let kCaptionHeight: CGFloat = 14
 private let kItemHeight: CGFloat = kThumbSize + kGap + kCaptionHeight
 private let kPanelWidth: CGFloat = kPadding * 2 + kColumns * kThumbSize + (kColumns - 1) * kGap
 private let kEmptyHeight: CGFloat = 96
-private let kMaxRows: CGFloat = 2
+private let kPanelRadius: CGFloat = 18
+
+// Glass edge color: very subtle white border matching the frosted glass aesthetic
+private let kGlassBorderColor = NSColor.white.withAlphaComponent(0.10).cgColor
+private let kGlowBorderColor  = NSColor.systemBlue.withAlphaComponent(0.65).cgColor
 
 final class ShelfView: NSView {
     var onItemsChanged: (() -> Void)?
@@ -18,6 +22,7 @@ final class ShelfView: NSView {
     private let emptyLabel = NSTextField(labelWithString: "Drop files here")
     private var itemViews: [ShelfItemView] = []
     private let clearButton = NSButton()
+    private let dashedBorderLayer = CAShapeLayer()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -42,16 +47,26 @@ final class ShelfView: NSView {
 
     private func setup() {
         wantsLayer = true
-        layer?.cornerRadius = 18
+        layer?.cornerRadius = kPanelRadius
         layer?.masksToBounds = true
+        layer?.borderWidth = 0.5
+        layer?.borderColor = kGlassBorderColor
 
         effectView.material = .hudWindow
         effectView.blendingMode = .behindWindow
         effectView.state = .active
         effectView.wantsLayer = true
-        effectView.layer?.cornerRadius = 18
+        effectView.layer?.cornerRadius = kPanelRadius
         effectView.layer?.masksToBounds = true
         addSubview(effectView)
+
+        // Dashed drop-target border, only visible in empty state
+        dashedBorderLayer.fillColor = nil
+        dashedBorderLayer.strokeColor = NSColor.white.withAlphaComponent(0.22).cgColor
+        dashedBorderLayer.lineWidth = 1
+        dashedBorderLayer.lineDashPattern = [6, 4]
+        dashedBorderLayer.cornerRadius = 10
+        layer?.addSublayer(dashedBorderLayer)
 
         emptyLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         emptyLabel.textColor = NSColor.secondaryLabelColor
@@ -59,10 +74,11 @@ final class ShelfView: NSView {
         addSubview(emptyLabel)
 
         clearButton.title = ""
-        clearButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Clear")
+        let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .medium)
+        clearButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Clear")?.withSymbolConfiguration(config)
         clearButton.bezelStyle = .regularSquare
         clearButton.isBordered = false
-        clearButton.contentTintColor = .secondaryLabelColor
+        clearButton.contentTintColor = NSColor.tertiaryLabelColor
         clearButton.target = self
         clearButton.action = #selector(clearTapped)
         addSubview(clearButton)
@@ -78,8 +94,12 @@ final class ShelfView: NSView {
     private func reload() {
         itemViews.forEach { $0.removeFromSuperview() }
         itemViews.removeAll()
-        emptyLabel.isHidden = !items.isEmpty
-        clearButton.isHidden = items.isEmpty
+
+        let empty = items.isEmpty
+        emptyLabel.isHidden = !empty
+        dashedBorderLayer.isHidden = !empty
+        clearButton.isHidden = empty
+
         layout()
 
         for (i, item) in items.enumerated() {
@@ -90,6 +110,13 @@ final class ShelfView: NSView {
             addSubview(view)
             itemViews.append(view)
             positionItemView(view, at: i)
+            // Fade each item in
+            view.alphaValue = 0
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.18
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                view.animator().alphaValue = 1
+            }
         }
         invalidateIntrinsicContentSize()
         onItemsChanged?()
@@ -107,10 +134,15 @@ final class ShelfView: NSView {
     override func layout() {
         super.layout()
         effectView.frame = bounds
+
         let s = intrinsicContentSize
+        let inset: CGFloat = 10
+        dashedBorderLayer.frame = CGRect(x: inset, y: inset, width: s.width - inset * 2, height: s.height - inset * 2)
+        dashedBorderLayer.path = CGPath(roundedRect: dashedBorderLayer.bounds, cornerWidth: 10, cornerHeight: 10, transform: nil)
+
         let lw: CGFloat = 120
         emptyLabel.frame = NSRect(x: (s.width - lw) / 2, y: (s.height - 16) / 2, width: lw, height: 16)
-        clearButton.frame = NSRect(x: s.width - 26, y: s.height - 26, width: 20, height: 20)
+        clearButton.frame = NSRect(x: s.width - 24, y: s.height - 24, width: 18, height: 18)
     }
 
     private func remove(item: ShelfItem) {
@@ -121,23 +153,30 @@ final class ShelfView: NSView {
     // MARK: - NSDraggingDestination
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        layer?.borderWidth = 1.5
-        layer?.borderColor = NSColor.systemBlue.withAlphaComponent(0.6).cgColor
+        setBorderGlow(true)
         return .link
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
-        layer?.borderWidth = 0
+        setBorderGlow(false)
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        layer?.borderWidth = 0
+        setBorderGlow(false)
         guard let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] else { return false }
         for url in urls {
             items.append(ShelfItem(url: url))
         }
         reload()
         return true
+    }
+
+    private func setBorderGlow(_ on: Bool) {
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.15)
+        layer?.borderColor = on ? kGlowBorderColor : kGlassBorderColor
+        layer?.borderWidth  = on ? 1.5 : 0.5
+        CATransaction.commit()
     }
 }
 
@@ -161,7 +200,7 @@ private final class ShelfItemView: NSView, NSDraggingSource {
         thumbView.image = item.icon
         thumbView.imageScaling = .scaleProportionallyUpOrDown
         thumbView.wantsLayer = true
-        thumbView.layer?.cornerRadius = kRadius
+        thumbView.layer?.cornerRadius = kThumbRadius
         thumbView.layer?.masksToBounds = true
         addSubview(thumbView)
 
@@ -196,7 +235,6 @@ private final class ShelfItemView: NSView, NSDraggingSource {
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        let removed = !operation.isEmpty
-        onDragOut?(removed)
+        onDragOut?(!operation.isEmpty)
     }
 }

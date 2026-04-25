@@ -42,6 +42,8 @@ private let kAccent      = NSColor(srgbRed: 0x5e/255, green: 0x6a/255, blue: 0xd
 
 final class ShelfView: NSView {
     var onItemsChanged: (() -> Void)?
+    var onDismissRequested: (() -> Void)?
+    var isEmpty: Bool { items.isEmpty }
     private var items: [ShelfItem] = []
 
     private let effectView = NSVisualEffectView()
@@ -78,7 +80,10 @@ final class ShelfView: NSView {
         tintView.gradColors = [kDarkTop, kDarkBot]
         addSubview(tintView)
 
-        headerView.onClear = { [weak self] in self?.clearItems() }
+        headerView.onClear = { [weak self] in
+            self?.clearItems()
+            self?.onDismissRequested?()
+        }
         addSubview(headerView)
         addSubview(emptyState)
 
@@ -196,7 +201,6 @@ private final class ShelfHeaderView: NSView {
     var onClear: (() -> Void)?
     var itemCount: Int = 0 { didSet { guard oldValue != itemCount else { return }; updateState() } }
 
-    private let gripView   = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "PocketShelf")
     private let badge      = ShelfBadgeView()
     private let clearBtn   = NSButton()
@@ -205,12 +209,6 @@ private final class ShelfHeaderView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     private func setup() {
-        let gripCfg = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
-        gripView.image = NSImage(systemSymbolName: "circle.grid.2x2.fill", accessibilityDescription: nil)?
-            .withSymbolConfiguration(gripCfg)
-        gripView.contentTintColor = NSColor.white.withAlphaComponent(0.42)
-        addSubview(gripView)
-
         titleLabel.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
         titleLabel.textColor = NSColor.white.withAlphaComponent(0.78)
         addSubview(titleLabel)
@@ -219,28 +217,22 @@ private final class ShelfHeaderView: NSView {
         addSubview(badge)
 
         let btnCfg = NSImage.SymbolConfiguration(pointSize: 9, weight: .medium)
-        clearBtn.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Clear")?
+        clearBtn.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Dismiss")?
             .withSymbolConfiguration(btnCfg)
         clearBtn.bezelStyle    = .regularSquare
         clearBtn.isBordered    = false
         clearBtn.wantsLayer    = true
         clearBtn.layer?.cornerRadius = 9
         clearBtn.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.10).cgColor
-        clearBtn.contentTintColor = NSColor.white.withAlphaComponent(0.28)
-        clearBtn.isEnabled = false
+        clearBtn.contentTintColor = NSColor.white.withAlphaComponent(0.85)
         clearBtn.target = self
         clearBtn.action = #selector(clearTapped)
         addSubview(clearBtn)
     }
 
     private func updateState() {
-        let has = itemCount > 0
-        badge.isHidden = !has
+        badge.isHidden = itemCount == 0
         badge.count    = itemCount
-        clearBtn.isEnabled = has
-        clearBtn.contentTintColor = has
-            ? NSColor.white.withAlphaComponent(0.85)
-            : NSColor.white.withAlphaComponent(0.28)
         needsLayout = true
     }
 
@@ -249,7 +241,6 @@ private final class ShelfHeaderView: NSView {
     override func layout() {
         super.layout()
         let h = bounds.height
-        gripView.frame = NSRect(x: 0, y: (h-14)/2, width: 14, height: 14)
         clearBtn.frame = NSRect(x: bounds.width-18, y: (h-18)/2, width: 18, height: 18)
 
         let titleW = titleLabel.intrinsicContentSize.width

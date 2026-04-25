@@ -4,6 +4,7 @@ import AppKit
 // Fires onShake when 3+ directional reversals of ≥20 px each occur within 600 ms.
 final class ShakeDetector {
     var onShake: (() -> Void)?
+    var onDragEnd: (() -> Void)?
     private var monitors: [Any] = []
     private var samples: [(x: CGFloat, t: TimeInterval)] = []
 
@@ -19,6 +20,7 @@ final class ShakeDetector {
 
         if let m = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp, handler: { [weak self] _ in
             self?.samples.removeAll()
+            DispatchQueue.main.async { self?.onDragEnd?() }
         }) { monitors.append(m) }
     }
 

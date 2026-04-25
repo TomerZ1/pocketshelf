@@ -21,10 +21,11 @@ final class ShelfPanel: NSPanel {
         isMovableByWindowBackground = true
 
         contentView = shelfView
-        shelfView.onItemsChanged = { [weak self] in
-            self?.sizeToFit()
-        }
+        shelfView.onItemsChanged = { [weak self] in self?.sizeToFit() }
+        shelfView.onDismissRequested = { [weak self] in self?.hide() }
     }
+
+    var isEmpty: Bool { shelfView.isEmpty }
 
     func show() {
         sizeToFit()

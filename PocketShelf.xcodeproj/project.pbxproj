@@ -14,6 +14,7 @@
 		AA00000000000000000000B5 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000A5 /* HotkeyManager.swift */; };
 		AA00000000000000000000B8 /* ShakeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000A8 /* ShakeDetector.swift */; };
 		AA00000000000000000000B6 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000A6 /* Assets.xcassets */; };
+		AA00000000000000000000BD /* QuickLookThumbnailing.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000CD /* QuickLookThumbnailing.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +27,7 @@
 		AA00000000000000000000A8 /* ShakeDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShakeDetector.swift; sourceTree = "<group>"; };
 		AA00000000000000000000A6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA00000000000000000000A7 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AA00000000000000000000CD /* QuickLookThumbnailing.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickLookThumbnailing.framework; path = System/Library/Frameworks/QuickLookThumbnailing.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -33,6 +35,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA00000000000000000000BD /* QuickLookThumbnailing.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

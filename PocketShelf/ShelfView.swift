@@ -403,7 +403,7 @@ private final class ShelfHeaderView: NSView {
         let gap: CGFloat    = itemCount > 0 ? 5  : 0
         let totalW = titleW + gap + badgeW
         let titleX = (bounds.width - totalW) / 2
-        titleLabel.frame = NSRect(x: titleX, y: (h-16)/2, width: titleW, height: 16)
+        titleLabel.frame = NSRect(x: titleX, y: (h-18)/2, width: titleW + 4, height: 18)
         if itemCount > 0 {
             badge.frame = NSRect(x: titleX + titleW + gap, y: (h-16)/2, width: badgeW, height: 16)
         }
@@ -518,7 +518,7 @@ private final class DragHandleView: NSView {
         let cfg = NSImage.SymbolConfiguration(pointSize: 9, weight: .medium)
         imageView.image = NSImage(systemSymbolName: "grip.horizontal", accessibilityDescription: "Move shelf")?
             .withSymbolConfiguration(cfg)
-        imageView.contentTintColor = NSColor.white.withAlphaComponent(0.45)
+        imageView.contentTintColor = NSColor.white.withAlphaComponent(0.72)
         addSubview(imageView)
     }
     required init?(coder: NSCoder) { fatalError() }

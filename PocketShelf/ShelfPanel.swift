@@ -61,7 +61,7 @@ final class ShelfPanel: NSPanel {
         isOpaque           = false
         backgroundColor    = .clear
         hasShadow          = false   // glow layer provides the shadow
-        isMovableByWindowBackground = true
+        isMovableByWindowBackground = false
 
         glowContainer.addSubview(shelfView)
         contentView = glowContainer

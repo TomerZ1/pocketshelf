@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyManager: HotkeyManager?
     private var shakeDetector: ShakeDetector?
     private var shakeOpened = false
+    private var outsideClickMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         shelfPanel = ShelfPanel()
@@ -37,6 +38,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let panel, panel.isVisible, panel.isEmpty else { return }
                 panel.hide()
             }
+        }
+
+        // Close an empty shelf when the user clicks anywhere outside it
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            guard let panel = self?.shelfPanel,
+                  panel.isVisible,
+                  panel.isEmpty,
+                  !panel.frame.contains(NSEvent.mouseLocation) else { return }
+            panel.hide()
         }
 
         setupMenuBarItem()

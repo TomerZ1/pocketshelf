@@ -35,8 +35,8 @@ private let kDarkBot      = NSColor(srgbRed: 36/255, green: 38/255, blue: 46/255
 private let kGlassBorder  = NSColor.white.withAlphaComponent(0.10).cgColor
 private let kGlowBorder   = NSColor.systemBlue.withAlphaComponent(0.65).cgColor
 private let kAccent       = NSColor(srgbRed: 0x5e/255, green: 0x6a/255, blue: 0xd2/255, alpha: 1)
-private let kSelFill      = NSColor(srgbRed: 0x5e/255, green: 0x6a/255, blue: 0xd2/255, alpha: 0.15)
-private let kSelStroke    = NSColor(srgbRed: 0x5e/255, green: 0x6a/255, blue: 0xd2/255, alpha: 0.55)
+private let kSelFill      = NSColor(srgbRed: 0.12, green: 0.46, blue: 1.0, alpha: 0.22)
+private let kSelStroke    = NSColor(srgbRed: 0.20, green: 0.55, blue: 1.0, alpha: 0.88)
 
 // MARK: - ShelfView
 
@@ -98,7 +98,7 @@ final class ShelfView: NSView {
 
         selectionLayer.fillColor   = kSelFill.cgColor
         selectionLayer.strokeColor = kSelStroke.cgColor
-        selectionLayer.lineWidth   = 1
+        selectionLayer.lineWidth   = 1.5
         selectionLayer.cornerRadius = 4
         selectionLayer.isHidden    = true
         layer?.addSublayer(selectionLayer)
@@ -367,6 +367,7 @@ private final class ShelfHeaderView: NSView {
     private let titleLabel = NSTextField(labelWithString: "PocketShelf")
     private let badge      = ShelfBadgeView()
     private let clearBtn   = NSButton()
+    private let dragHandle = DragHandleView()
 
     override init(frame: NSRect) { super.init(frame: frame); setup() }
     required init?(coder: NSCoder) { fatalError() }
@@ -391,6 +392,7 @@ private final class ShelfHeaderView: NSView {
         clearBtn.target = self
         clearBtn.action = #selector(clearTapped)
         addSubview(clearBtn)
+        addSubview(dragHandle)
     }
 
     private func updateState() {
@@ -404,6 +406,7 @@ private final class ShelfHeaderView: NSView {
     override func layout() {
         super.layout()
         let h = bounds.height
+        dragHandle.frame = NSRect(x: 0, y: (h-18)/2, width: 18, height: 18)
         clearBtn.frame = NSRect(x: bounds.width-18, y: (h-18)/2, width: 18, height: 18)
         let titleW = titleLabel.intrinsicContentSize.width
         let badgeW: CGFloat = itemCount > 0 ? 24 : 0
@@ -484,6 +487,32 @@ private final class ShelfEmptyStateView: NSView {
         let hy = wy - 8 - 16
         hintLabel.frame = NSRect(x: 0, y: hy,       width: w, height: 16)
         subLabel.frame  = NSRect(x: 0, y: hy-4-13,  width: w, height: 13)
+    }
+}
+
+// MARK: - DragHandleView
+
+// Dedicated move handle — only dragging from this icon moves the shelf window.
+// performDrag(with:) hands the move tracking to NSWindow directly.
+private final class DragHandleView: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        let iv = NSImageView()
+        let cfg = NSImage.SymbolConfiguration(pointSize: 9, weight: .medium)
+        iv.image = NSImage(systemSymbolName: "grip.horizontal", accessibilityDescription: "Move shelf")?
+            .withSymbolConfiguration(cfg)
+        iv.contentTintColor = NSColor.white.withAlphaComponent(0.38)
+        iv.autoresizingMask = [.width, .height]
+        addSubview(iv)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .openHand)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
     }
 }
 

@@ -55,7 +55,7 @@ final class ShelfView: NSView {
     // Selection state
     private var selectedIndices: Set<Int> = []
     private var selectionStart: NSPoint?
-    private let selectionLayer = CAShapeLayer()
+    private let selectionView = SelectionOverlayView()
 
     // Mouse-handling state (ShelfView owns all events via hitTest override)
     private var dragStartItemIndex: Int?
@@ -96,19 +96,13 @@ final class ShelfView: NSView {
         tintView.gradColors = [kDarkTop, kDarkBot]
         addSubview(tintView)
 
-        selectionLayer.fillColor   = kSelFill.cgColor
-        selectionLayer.strokeColor = kSelStroke.cgColor
-        selectionLayer.lineWidth   = 1.5
-        selectionLayer.cornerRadius = 4
-        selectionLayer.isHidden    = true
-        layer?.addSublayer(selectionLayer)
-
         headerView.onClear = { [weak self] in
             self?.clearItems()
             self?.onDismissRequested?()
         }
         addSubview(headerView)
         addSubview(emptyState)
+        addSubview(selectionView)  // added last so it renders above all subviews
 
         registerForDraggedTypes([.fileURL])
         reload()
@@ -132,6 +126,7 @@ final class ShelfView: NSView {
                 v.animator().alphaValue = 1
             }
         }
+        addSubview(selectionView)  // re-add to keep above newly added item views
         invalidateIntrinsicContentSize()
         needsLayout = true
         onItemsChanged?()
@@ -156,7 +151,7 @@ final class ShelfView: NSView {
             let y = gridTop - (row+1)*kTileH - row*kGap
             v.frame = NSRect(x: x, y: y, width: kTileW, height: kTileH)
         }
-        // Re-sync hover after layout changes item frames
+        selectionView.frame = bounds
         needsUpdateConstraints = false
     }
 
@@ -199,7 +194,7 @@ final class ShelfView: NSView {
         let pt = convert(event.locationInWindow, from: nil)
         selectionStart     = pt
         dragStartItemIndex = itemViews.firstIndex { $0.frame.contains(pt) }
-        selectionLayer.isHidden = true
+        selectionView.selectionRect = nil
 
         if let idx = dragStartItemIndex {
             handleItemMouseDown(at: idx, event: event)
@@ -274,12 +269,7 @@ final class ShelfView: NSView {
             x: min(start.x, pt.x), y: min(start.y, pt.y),
             width: abs(pt.x - start.x), height: abs(pt.y - start.y)
         )
-        selectionLayer.frame = rect
-        selectionLayer.path  = CGPath(
-            roundedRect: selectionLayer.bounds,
-            cornerWidth: 4, cornerHeight: 4, transform: nil
-        )
-        selectionLayer.isHidden = rect.width < 4 && rect.height < 4
+        selectionView.selectionRect = (rect.width >= 4 || rect.height >= 4) ? rect : nil
 
         var newSel = Set<Int>()
         for (i, v) in itemViews.enumerated() {
@@ -294,7 +284,7 @@ final class ShelfView: NSView {
     override func mouseUp(with event: NSEvent) {
         selectionStart     = nil
         dragStartItemIndex = nil
-        selectionLayer.isHidden = true
+        selectionView.selectionRect = nil
     }
 
     // MARK: - NSDraggingDestination
@@ -490,22 +480,58 @@ private final class ShelfEmptyStateView: NSView {
     }
 }
 
-// MARK: - DragHandleView
+// MARK: - SelectionOverlayView
 
-// Dedicated move handle — only dragging from this icon moves the shelf window.
-// performDrag(with:) hands the move tracking to NSWindow directly.
-private final class DragHandleView: NSView {
+// Transparent NSView drawn on top of all item tiles.
+// Using a real NSView (not a CALayer sublayer) ensures it renders above AppKit subviews.
+private final class SelectionOverlayView: NSView {
+    var selectionRect: NSRect? { didSet { needsDisplay = true } }
+
     override init(frame: NSRect) {
         super.init(frame: frame)
-        let iv = NSImageView()
-        let cfg = NSImage.SymbolConfiguration(pointSize: 9, weight: .medium)
-        iv.image = NSImage(systemSymbolName: "grip.horizontal", accessibilityDescription: "Move shelf")?
-            .withSymbolConfiguration(cfg)
-        iv.contentTintColor = NSColor.white.withAlphaComponent(0.38)
-        iv.autoresizingMask = [.width, .height]
-        addSubview(iv)
+        // Must not intercept mouse events — ShelfView owns all of them
     }
     required init?(coder: NSCoder) { fatalError() }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }  // pass-through
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let rect = selectionRect, rect.width >= 4 || rect.height >= 4 else { return }
+        let path = NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4)
+        kSelFill.setFill()
+        path.fill()
+        kSelStroke.setStroke()
+        path.lineWidth = 1.5
+        path.stroke()
+    }
+}
+
+// MARK: - DragHandleView
+
+// Only dragging from this grip icon moves the shelf window.
+// hitTest returns self so the inner NSImageView never swallows mouse events.
+private final class DragHandleView: NSView {
+    private let imageView = NSImageView()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        let cfg = NSImage.SymbolConfiguration(pointSize: 9, weight: .medium)
+        imageView.image = NSImage(systemSymbolName: "grip.horizontal", accessibilityDescription: "Move shelf")?
+            .withSymbolConfiguration(cfg)
+        imageView.contentTintColor = NSColor.white.withAlphaComponent(0.45)
+        addSubview(imageView)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        imageView.frame = bounds
+    }
+
+    // Claim all hits so the NSImageView subview never intercepts clicks
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        return bounds.contains(point) ? self : nil
+    }
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .openHand)

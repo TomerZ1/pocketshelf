@@ -523,9 +523,9 @@ private final class DragHandleView: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    override func layout() {
-        super.layout()
-        imageView.frame = bounds
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        imageView.frame = NSRect(origin: .zero, size: newSize)
     }
 
     // Claim all hits so the NSImageView subview never intercepts clicks

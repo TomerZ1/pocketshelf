@@ -3,7 +3,7 @@ import AppKit
 // The glow panel is larger than the shelf content by kGlowInset on each side,
 // giving the neon CALayer shadow room to render outside the shelf bounds without
 // being clipped by the window frame.
-private let kGlowInset: CGFloat = 14
+private let kGlowInset: CGFloat = 10
 
 // GlowContainerView sits behind ShelfView and is NOT masksToBounds so its shadow
 // overflows. ShelfView inside it does its own corner clipping independently.
@@ -20,7 +20,7 @@ private final class GlowContainerView: NSView {
         glowLayer.borderColor     = NSColor(srgbRed: 0.65, green: 0.52, blue: 1.0, alpha: 0.80).cgColor
         glowLayer.borderWidth     = 1.5
         glowLayer.shadowColor     = NSColor(srgbRed: 0.55, green: 0.40, blue: 1.0, alpha: 1.0).cgColor
-        glowLayer.shadowRadius    = 10
+        glowLayer.shadowRadius    = 6
         glowLayer.shadowOpacity   = 0.90
         glowLayer.shadowOffset    = .zero
         layer?.addSublayer(glowLayer)

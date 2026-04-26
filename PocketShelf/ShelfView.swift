@@ -508,29 +508,30 @@ private final class SelectionOverlayView: NSView {
 
 // MARK: - DragHandleView
 
-// Only dragging from this grip icon moves the shelf window.
-// hitTest returns self so the inner NSImageView never swallows mouse events.
+// Draws 6 dots directly via draw() — no subview, no frame-tracking issues.
+// hitTest returns self so clicks land here. mouseDown hands move to the window.
 private final class DragHandleView: NSView {
-    private let imageView = NSImageView()
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        let cfg = NSImage.SymbolConfiguration(pointSize: 9, weight: .medium)
-        imageView.image = NSImage(systemSymbolName: "grip.horizontal", accessibilityDescription: "Move shelf")?
-            .withSymbolConfiguration(cfg)
-        imageView.contentTintColor = NSColor.white.withAlphaComponent(0.72)
-        addSubview(imageView)
-    }
+    override init(frame: NSRect) { super.init(frame: frame) }
     required init?(coder: NSCoder) { fatalError() }
 
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        imageView.frame = NSRect(origin: .zero, size: newSize)
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.white.withAlphaComponent(0.55).setFill()
+        let d: CGFloat = 2.0, gx: CGFloat = 3.5, gy: CGFloat = 3.0
+        let ox = (bounds.width  - d - gx) / 2
+        let oy = (bounds.height - d*3 - gy*2) / 2
+        for col in 0..<2 {
+            for row in 0..<3 {
+                NSBezierPath(ovalIn: NSRect(
+                    x: ox + CGFloat(col) * (d + gx),
+                    y: oy + CGFloat(row) * (d + gy),
+                    width: d, height: d
+                )).fill()
+            }
+        }
     }
 
-    // Claim all hits so the NSImageView subview never intercepts clicks
     override func hitTest(_ point: NSPoint) -> NSView? {
-        return bounds.contains(point) ? self : nil
+        bounds.contains(point) ? self : nil
     }
 
     override func resetCursorRects() {

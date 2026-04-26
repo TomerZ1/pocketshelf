@@ -1,31 +1,41 @@
 import AppKit
 
-// GlowContainerView is a masksToBounds=false wrapper so CALayer shadows (neon glow)
-// aren't clipped — the ShelfView inside does its own corner clipping.
+// The glow panel is larger than the shelf content by kGlowInset on each side,
+// giving the neon CALayer shadow room to render outside the shelf bounds without
+// being clipped by the window frame.
+private let kGlowInset: CGFloat = 14
+
+// GlowContainerView sits behind ShelfView and is NOT masksToBounds so its shadow
+// overflows. ShelfView inside it does its own corner clipping independently.
 private final class GlowContainerView: NSView {
     private let glowLayer = CALayer()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        // Do NOT set masksToBounds — the shadow must overflow the view bounds
+        layer?.masksToBounds = false
 
-        glowLayer.cornerRadius   = 18
+        glowLayer.cornerRadius    = 18
         glowLayer.backgroundColor = NSColor.clear.cgColor
-        glowLayer.borderColor    = NSColor(srgbRed: 0.60, green: 0.50, blue: 1.0, alpha: 0.45).cgColor
-        glowLayer.borderWidth    = 1.0
-        glowLayer.shadowColor    = NSColor(srgbRed: 0.50, green: 0.38, blue: 0.95, alpha: 1.0).cgColor
-        glowLayer.shadowRadius   = 20
-        glowLayer.shadowOpacity  = 0.55
-        glowLayer.shadowOffset   = .zero
+        glowLayer.borderColor     = NSColor(srgbRed: 0.65, green: 0.52, blue: 1.0, alpha: 0.80).cgColor
+        glowLayer.borderWidth     = 1.5
+        glowLayer.shadowColor     = NSColor(srgbRed: 0.55, green: 0.40, blue: 1.0, alpha: 1.0).cgColor
+        glowLayer.shadowRadius    = 10
+        glowLayer.shadowOpacity   = 0.90
+        glowLayer.shadowOffset    = .zero
         layer?.addSublayer(glowLayer)
     }
     required init?(coder: NSCoder) { fatalError() }
 
     override func layout() {
         super.layout()
-        glowLayer.frame      = bounds
-        glowLayer.shadowPath = CGPath(roundedRect: bounds, cornerWidth: 18, cornerHeight: 18, transform: nil)
+        // Position glowLayer inset from container — the shadow overflows into the inset margin
+        let f = bounds.insetBy(dx: kGlowInset, dy: kGlowInset)
+        glowLayer.frame      = f
+        glowLayer.shadowPath = CGPath(
+            roundedRect: glowLayer.bounds,
+            cornerWidth: 18, cornerHeight: 18, transform: nil
+        )
     }
 }
 
@@ -37,25 +47,26 @@ final class ShelfPanel: NSPanel {
         shelfView     = ShelfView()
         glowContainer = GlowContainerView(frame: .zero)
 
-        let size = shelfView.intrinsicContentSize
-        let rect = NSRect(x: 0, y: 0, width: size.width, height: size.height)
+        let sz    = shelfView.intrinsicContentSize
+        let padSz = NSSize(width: sz.width + kGlowInset*2, height: sz.height + kGlowInset*2)
+        let rect  = NSRect(origin: .zero, size: padSz)
         super.init(
             contentRect: rect,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        level            = .floating
+        level              = .floating
         collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
-        isOpaque         = false
-        backgroundColor  = .clear
-        hasShadow        = false   // panel shadow off; glow layer provides it
+        isOpaque           = false
+        backgroundColor    = .clear
+        hasShadow          = false   // glow layer provides the shadow
         isMovableByWindowBackground = true
 
         glowContainer.addSubview(shelfView)
         contentView = glowContainer
 
-        shelfView.onItemsChanged    = { [weak self] in self?.sizeToFit() }
+        shelfView.onItemsChanged     = { [weak self] in self?.sizeToFit() }
         shelfView.onDismissRequested = { [weak self] in self?.hide() }
     }
 
@@ -64,10 +75,12 @@ final class ShelfPanel: NSPanel {
     func show() {
         sizeToFit()
         let mouse = NSEvent.mouseLocation
-        let origin = NSPoint(x: mouse.x - frame.width / 2, y: mouse.y - frame.height - 8)
-        if !isVisible {
-            setFrameOrigin(clampedOrigin(origin))
-        }
+        // Align visible shelf content 8 px below cursor (not the glow padding)
+        let origin = NSPoint(
+            x: mouse.x - frame.width / 2,
+            y: mouse.y - shelfView.frame.height - kGlowInset - 8
+        )
+        if !isVisible { setFrameOrigin(clampedOrigin(origin)) }
         alphaValue = 0
         makeKeyAndOrderFront(nil)
         contentView?.layer?.setAffineTransform(CGAffineTransform(scaleX: 0.94, y: 0.94))
@@ -92,7 +105,10 @@ final class ShelfPanel: NSPanel {
     func showWithSpring() {
         sizeToFit()
         let mouse = NSEvent.mouseLocation
-        let origin = NSPoint(x: mouse.x - frame.width / 2, y: mouse.y - frame.height - 12)
+        let origin = NSPoint(
+            x: mouse.x - frame.width / 2,
+            y: mouse.y - shelfView.frame.height - kGlowInset - 12
+        )
         setFrameOrigin(clampedOrigin(origin))
         alphaValue = 0
         makeKeyAndOrderFront(nil)
@@ -124,15 +140,14 @@ final class ShelfPanel: NSPanel {
         })
     }
 
-    func clearItems() {
-        shelfView.clearItems()
-    }
+    func clearItems() { shelfView.clearItems() }
 
     private func sizeToFit() {
-        let size = shelfView.intrinsicContentSize
-        setContentSize(size)
-        glowContainer.frame = NSRect(origin: .zero, size: size)
-        shelfView.frame     = NSRect(origin: .zero, size: size)
+        let sz    = shelfView.intrinsicContentSize
+        let padSz = NSSize(width: sz.width + kGlowInset*2, height: sz.height + kGlowInset*2)
+        setContentSize(padSz)
+        glowContainer.frame = NSRect(origin: .zero, size: padSz)
+        shelfView.frame     = NSRect(x: kGlowInset, y: kGlowInset, width: sz.width, height: sz.height)
     }
 
     private func clampedOrigin(_ origin: NSPoint) -> NSPoint {

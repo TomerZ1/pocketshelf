@@ -57,6 +57,17 @@ final class ShelfView: NSView {
     private var selectionStart: NSPoint?
     private let selectionLayer = CAShapeLayer()
 
+    // Mouse-handling state (ShelfView owns all events via hitTest override)
+    private var dragStartItemIndex: Int?
+    private var currentDragItems: [ShelfItem] = []
+    private var hoveredIndex: Int? {
+        didSet {
+            guard oldValue != hoveredIndex else { return }
+            if let old = oldValue, old < itemViews.count { itemViews[old].setHovered(false) }
+            if let new = hoveredIndex, new < itemViews.count { itemViews[new].setHovered(true) }
+        }
+    }
+
     override init(frame: NSRect) { super.init(frame: frame); setup() }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -85,7 +96,6 @@ final class ShelfView: NSView {
         tintView.gradColors = [kDarkTop, kDarkBot]
         addSubview(tintView)
 
-        // Rubber-band selection layer
         selectionLayer.fillColor   = kSelFill.cgColor
         selectionLayer.strokeColor = kSelStroke.cgColor
         selectionLayer.lineWidth   = 1
@@ -107,26 +117,12 @@ final class ShelfView: NSView {
     private func reload() {
         itemViews.forEach { $0.removeFromSuperview() }
         itemViews.removeAll()
+        hoveredIndex = nil
         emptyState.isHidden  = !items.isEmpty
         headerView.itemCount = items.count
 
-        for (i, item) in items.enumerated() {
-            let idx = i
+        for item in items {
             let v = ShelfItemView(item: item)
-            v.onMouseDown = { [weak self] event in self?.handleItemMouseDown(at: idx, event: event) }
-            v.onDragOut   = { [weak self] draggedItems, removed in
-                guard removed else { return }
-                self?.removeItems(draggedItems)
-            }
-            v.getSelectedItems = { [weak self] () -> [ShelfItem] in
-                guard let self else { return [item] }
-                if self.selectedIndices.contains(idx) {
-                    return self.selectedIndices.sorted().compactMap {
-                        self.items.indices.contains($0) ? self.items[$0] : nil
-                    }
-                }
-                return [item]
-            }
             addSubview(v)
             itemViews.append(v)
             v.alphaValue = 0
@@ -160,6 +156,8 @@ final class ShelfView: NSView {
             let y = gridTop - (row+1)*kTileH - row*kGap
             v.frame = NSRect(x: x, y: y, width: kTileW, height: kTileH)
         }
+        // Re-sync hover after layout changes item frames
+        needsUpdateConstraints = false
     }
 
     private func removeItems(_ toRemove: [ShelfItem]) {
@@ -168,14 +166,56 @@ final class ShelfView: NSView {
         reload()
     }
 
+    // MARK: - Mouse event ownership
+    // Return self for all grid-area clicks so ShelfView handles rubber-band and file drags directly.
+    // The header area uses normal hit-testing so the close button keeps working.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard bounds.contains(point) else { return nil }
+        let headerTop = bounds.height - kHeaderTopPad - kHeaderH
+        if point.y >= headerTop - 2 { return super.hitTest(point) }
+        return self
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for ta in trackingAreas { removeTrackingArea(ta) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways],
+            owner: self, userInfo: nil
+        ))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let pt = convert(event.locationInWindow, from: nil)
+        hoveredIndex = itemViews.firstIndex { $0.frame.contains(pt) }
+    }
+
+    override func mouseExited(with event: NSEvent) { hoveredIndex = nil }
+
     // MARK: - Item selection
+
+    override func mouseDown(with event: NSEvent) {
+        let pt = convert(event.locationInWindow, from: nil)
+        selectionStart     = pt
+        dragStartItemIndex = itemViews.firstIndex { $0.frame.contains(pt) }
+        selectionLayer.isHidden = true
+
+        if let idx = dragStartItemIndex {
+            handleItemMouseDown(at: idx, event: event)
+        } else if !event.modifierFlags.contains(.command) {
+            selectedIndices.removeAll()
+            updateSelectionVisuals()
+        }
+    }
 
     private func handleItemMouseDown(at idx: Int, event: NSEvent) {
         if event.modifierFlags.contains(.command) {
             if selectedIndices.contains(idx) { selectedIndices.remove(idx) }
             else { selectedIndices.insert(idx) }
         } else {
-            selectedIndices = selectedIndices.contains(idx) ? selectedIndices : [idx]
+            // Keep existing multi-selection if clicking an already-selected item (enables multi-drag)
+            if !selectedIndices.contains(idx) { selectedIndices = [idx] }
         }
         updateSelectionVisuals()
     }
@@ -186,42 +226,74 @@ final class ShelfView: NSView {
         }
     }
 
-    // MARK: - Rubber-band selection
-
-    override func mouseDown(with event: NSEvent) {
-        // Fires only for background clicks (item views intercept item area clicks)
-        if !event.modifierFlags.contains(.command) {
-            selectedIndices.removeAll()
-            updateSelectionVisuals()
-        }
-        selectionStart = convert(event.locationInWindow, from: nil)
-        selectionLayer.isHidden = true
-    }
+    // MARK: - Rubber-band + file drag
 
     override func mouseDragged(with event: NSEvent) {
         guard let start = selectionStart else { return }
-        let pt = convert(event.locationInWindow, from: nil)
+        let pt   = convert(event.locationInWindow, from: nil)
+        let dist = hypot(pt.x - start.x, pt.y - start.y)
+        guard dist > 3 else { return }
+
+        // Drag started over an item → initiate file drag
+        if let idx = dragStartItemIndex, idx < itemViews.count {
+            dragStartItemIndex = nil
+            selectionStart = nil
+
+            let toDrag: [ShelfItem]
+            if selectedIndices.contains(idx) {
+                toDrag = selectedIndices.sorted().compactMap {
+                    items.indices.contains($0) ? items[$0] : nil
+                }
+            } else {
+                toDrag = [items[idx]]
+            }
+            currentDragItems = toDrag
+
+            let iv = itemViews[idx]
+            var dis: [NSDraggingItem] = []
+            for (offset, dragItem) in toDrag.enumerated() {
+                let pb = NSPasteboardItem()
+                pb.setString(dragItem.url.absoluteString, forType: .fileURL)
+                let d = NSDraggingItem(pasteboardWriter: pb)
+                let so = CGFloat(offset) * 2
+                // Convert thumbView origin from ShelfItemView-local to ShelfView coords
+                let frame = NSRect(
+                    x: iv.frame.minX + iv.thumbView.frame.minX + so,
+                    y: iv.frame.minY + iv.thumbView.frame.minY - so,
+                    width: kThumbSize, height: kThumbSize
+                )
+                d.setDraggingFrame(frame, contents: dragItem.thumbnail)
+                dis.append(d)
+            }
+            beginDraggingSession(with: dis, event: event, source: self)
+            return
+        }
+
+        // Drag started on background → rubber-band selection
         let rect = NSRect(
             x: min(start.x, pt.x), y: min(start.y, pt.y),
             width: abs(pt.x - start.x), height: abs(pt.y - start.y)
         )
         selectionLayer.frame = rect
-        selectionLayer.path  = CGPath(roundedRect: selectionLayer.bounds, cornerWidth: 4, cornerHeight: 4, transform: nil)
+        selectionLayer.path  = CGPath(
+            roundedRect: selectionLayer.bounds,
+            cornerWidth: 4, cornerHeight: 4, transform: nil
+        )
         selectionLayer.isHidden = rect.width < 4 && rect.height < 4
 
-        // Select items whose thumb intersects the rubber-band rect
-        var newSelection = Set<Int>()
+        var newSel = Set<Int>()
         for (i, v) in itemViews.enumerated() {
-            if rect.intersects(v.frame) { newSelection.insert(i) }
+            if rect.intersects(v.frame) { newSel.insert(i) }
         }
-        if newSelection != selectedIndices {
-            selectedIndices = newSelection
+        if newSel != selectedIndices {
+            selectedIndices = newSel
             updateSelectionVisuals()
         }
     }
 
     override func mouseUp(with event: NSEvent) {
-        selectionStart = nil
+        selectionStart     = nil
+        dragStartItemIndex = nil
         selectionLayer.isHidden = true
     }
 
@@ -246,12 +318,27 @@ final class ShelfView: NSView {
         reload()
         return true
     }
+
     private func setBorderGlow(_ on: Bool) {
         CATransaction.begin()
         CATransaction.setAnimationDuration(0.15)
         layer?.borderColor = on ? kGlowBorder : kGlassBorder
         layer?.borderWidth  = on ? 1.5 : 0.5
         CATransaction.commit()
+    }
+}
+
+// MARK: - NSDraggingSource
+
+extension ShelfView: NSDraggingSource {
+    func draggingSession(_ session: NSDraggingSession,
+                         sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .outsideApplication ? [.copy, .move, .link] : []
+    }
+    func draggingSession(_ session: NSDraggingSession,
+                         endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        if !operation.isEmpty { removeItems(currentDragItems) }
+        currentDragItems = []
     }
 }
 
@@ -402,25 +489,12 @@ private final class ShelfEmptyStateView: NSView {
 
 // MARK: - ShelfItemView
 
-final class ShelfItemView: NSView, NSDraggingSource {
-    // Callbacks set by ShelfView
-    var onMouseDown:       ((NSEvent)   -> Void)?
-    var onDragOut:         (([ShelfItem], Bool) -> Void)?
-    var getSelectedItems:  (() -> [ShelfItem])?
-
-    var isSelected: Bool = false {
-        didSet {
-            layer?.backgroundColor = isSelected ? kAccent.withAlphaComponent(0.18).cgColor : nil
-            layer?.borderColor     = isSelected ? kAccent.withAlphaComponent(0.60).cgColor : NSColor.clear.cgColor
-            layer?.borderWidth     = isSelected ? 1 : 0
-        }
-    }
-
+final class ShelfItemView: NSView {
     let item: ShelfItem
     let thumbView = NSImageView()
     private let label = NSTextField(labelWithString: "")
-    private var trackingArea: NSTrackingArea?
-    private var pendingDragItems: [ShelfItem] = []
+
+    var isSelected: Bool = false { didSet { updateAppearance() } }
 
     init(item: ShelfItem) {
         self.item = item
@@ -440,7 +514,6 @@ final class ShelfItemView: NSView, NSDraggingSource {
         thumbView.layer?.masksToBounds = true
         addSubview(thumbView)
 
-        // Update when QL thumbnail finishes loading
         item.onThumbnailUpdated = { [weak self] img in self?.thumbView.image = img }
 
         label.stringValue   = item.filename
@@ -451,18 +524,15 @@ final class ShelfItemView: NSView, NSDraggingSource {
         addSubview(label)
     }
 
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let ta = trackingArea { removeTrackingArea(ta) }
-        trackingArea = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self, userInfo: nil)
-        addTrackingArea(trackingArea!)
+    func setHovered(_ on: Bool) {
+        guard !isSelected else { return }
+        layer?.backgroundColor = on ? NSColor.white.withAlphaComponent(0.09).cgColor : nil
     }
 
-    override func mouseEntered(with event: NSEvent) {
-        if !isSelected { layer?.backgroundColor = NSColor.white.withAlphaComponent(0.09).cgColor }
-    }
-    override func mouseExited(with event: NSEvent) {
-        if !isSelected { layer?.backgroundColor = nil }
+    private func updateAppearance() {
+        layer?.backgroundColor = isSelected ? kAccent.withAlphaComponent(0.18).cgColor : nil
+        layer?.borderColor     = isSelected ? kAccent.withAlphaComponent(0.60).cgColor : NSColor.clear.cgColor
+        layer?.borderWidth     = isSelected ? 1 : 0
     }
 
     override func layout() {
@@ -470,37 +540,5 @@ final class ShelfItemView: NSView, NSDraggingSource {
         let thumbX = (bounds.width - kThumbSize) / 2
         thumbView.frame = NSRect(x: thumbX, y: kCaptionH + kTileInnerGap, width: kThumbSize, height: kThumbSize)
         label.frame     = NSRect(x: 0, y: 0, width: bounds.width, height: kCaptionH)
-    }
-
-    // Forward mouseDown to ShelfView for selection handling
-    override func mouseDown(with event: NSEvent) {
-        onMouseDown?(event)
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        let itemsToDrag = getSelectedItems?() ?? [item]
-        pendingDragItems = itemsToDrag
-
-        var draggingItems: [NSDraggingItem] = []
-        for (offset, dragItem) in itemsToDrag.enumerated() {
-            let pb = NSPasteboardItem()
-            pb.setString(dragItem.url.absoluteString, forType: .fileURL)
-            let di = NSDraggingItem(pasteboardWriter: pb)
-            let stackOff = CGFloat(offset) * 2
-            let frame = NSRect(x: thumbView.frame.minX + stackOff,
-                               y: thumbView.frame.minY - stackOff,
-                               width: kThumbSize, height: kThumbSize)
-            di.setDraggingFrame(frame, contents: dragItem.thumbnail)
-            draggingItems.append(di)
-        }
-        beginDraggingSession(with: draggingItems, event: event, source: self)
-    }
-
-    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        context == .outsideApplication ? [.copy, .move, .link] : []
-    }
-    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        onDragOut?(pendingDragItems.isEmpty ? [item] : pendingDragItems, !operation.isEmpty)
-        pendingDragItems.removeAll()
     }
 }
